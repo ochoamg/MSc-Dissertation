@@ -1,0 +1,170 @@
+```{r}
+library(tidyverse)
+library(stringr)
+library(patchwork)
+
+sv_file = "D:/Birkbeck/Project/cutesv_nanopores.csv"
+allele_file = 'D:/BirkBeck/Project/Ultralong/1_per_read_variant_calls.txt'
+methylation_file = 'D:/Birkbeck/Project/Ultralong/1_per_read_modified_base_calls.txt'
+
+chromosome_name = "KY962518.1_looped_2120"
+
+coding_regions_h <- tribble(
+  ~region,~start,~end,
+  '18S',3658,5526,
+  '5.8S',6597,6753,
+  '28S',7921,12971)
+
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)
+}
+```
+
+```{r}
+svariants <- read_delim(sv_file, "  ", col_types=cols(), col_names = c(
+  'SV','read_id'))
+
+svariants <- svariants %>%
+  mutate(read_id = strsplit(as.character(read_id), ",")) %>%
+  unnest(read_id) %>%
+  filter(SV == 'cuteSV.DEL.1') %>%
+  mutate(read_id = str_trim(read_id))
+```
+
+```{r}
+meth_calls_UL <- read_tsv(methylation_file, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=if_else(strand=='+', pos+1, pos),
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         meth_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, can_log_prob, mod_log_prob) %>%
+  select(read_id, meth_ref, can_prob=can_log_prob,
+         mod_prob=mod_log_prob) %>%
+  pivot_longer(c(can_prob, mod_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, meth_ref) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(meth=if_else(dominant=="mod_prob", 1, 0)) %>%
+  mutate(has_sv=(read_id %in% svariants$read_id)) %>%
+  group_by(read_id) %>%
+  filter(! all(meth_ref > 7921), ! all(meth_ref < 13332))
+
+  
+```
+
+```{r}
+data_UL <- meth_calls_UL %>%
+  filter(meth_ref > -1000, meth_ref <= 13332) %>%
+  group_by(read_id, has_sv) %>%
+  summarise(meth=mean(meth), .groups='drop')
+plot_UL <- data_UL %>%
+  ggplot(aes(x=as.factor(has_sv), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(-0.05,1.05),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Ultralong Sample with SV')
+plot_UL
+dat <- ggplot_build(plot_UL)$data[[1]]
+
+plot_UL_f <- plot_UL + geom_segment(data=dat, aes(x=xmin, xend=xmax, y=middle, yend=middle), colour="red", size=2)
+plot_UL_f
+```
+
+```{r}
+allele_calls_UL <- read_tsv(allele_file, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  filter(nchar(ref_seq) ==1, nchar(alt_seq) ==1) %>%
+  select(-chrm) %>%
+  mutate(pos=pos+1,
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         pos_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, ref_log_prob, alt_log_prob,
+           ref_seq, alt_seq, var_id, pos_ref) %>%
+  select(read_id, pos_ref, ref=ref_seq, ref_prob=ref_log_prob,
+         alt=alt_seq, alt_prob=alt_log_prob) %>%
+  pivot_longer(c(ref_prob, alt_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, pos_ref, ref, alt) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(dominant=gsub('_prob', '', dominant),
+         allele=if_else(dominant=="ref", ref, alt)) %>%
+  ungroup() %>%
+  select(read_id, pos_ref, allele) %>%
+  distinct() %>%
+  group_by(read_id) %>%
+  filter(n_distinct(pos_ref)==n()) %>%
+  ungroup() %>%
+  mutate(has_sv=(read_id %in% svariants$read_id))
+
+```
+
+```{r}
+plot_stuff_UL <- data_UL %>%
+  inner_join(allele_calls_UL, by=c('read_id', 'has_sv'), suffix = c('_variant','_methylation')) %>%
+  group_by(read_id, pos_ref, has_sv) %>%
+  ungroup()
+```
+
+```{r}
+plot_stuff_UL_sv <- plot_stuff_UL %>%
+  filter(has_sv == TRUE) %>%
+  filter(pos_ref == 7980) %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(-0.05,1.05),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Nanopore Sample with SV @ 7980')
+
+```
+
+```{r}
+plot_stuff_UL_no_sv <- plot_stuff_UL %>%
+  filter(has_sv == FALSE) %>%
+  filter(pos_ref == 7980) %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(-0.05,1.05),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Without SV @ 7980')
+
+```
+
+```{r}
+(plot_stuff_UL_sv + plot_stuff_UL_no_sv)
+```
+
+
+```{r}
+ratio_sv_UL <- plot_stuff_UL %>%
+  filter(pos_ref == 7980) %>% 
+  group_by(allele, has_sv) %>%
+  summarise(num_reads=n(), .groups='drop') %>%
+  group_by(has_sv) %>%
+  mutate(freq_reads=num_reads/sum(num_reads))
+```
+
+```{r}
+sv_proportion_UL <- plot_stuff_UL %>%
+  filter(pos_ref == 7980) %>% 
+  group_by(has_sv) %>%
+  summarise(num_reads=n(), .groups='drop') %>%
+  mutate(freq_reads=num_reads/sum(num_reads))
+```

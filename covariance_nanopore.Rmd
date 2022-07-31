@@ -1,0 +1,123 @@
+```{r}
+library(tidyverse) 
+methylation_file_UL = 'D:/Birkbeck/Project/Ultralong/20_per_read_modified_base_calls.txt'
+allele_file_UL = 'D:/BirkBeck/Project/Ultralong/20_per_read_variant_calls.txt'
+chromosome_name = "KY962518.1_looped_2120_20_units"
+
+```
+
+```{r}
+allele_calls_UL_7980 <- read_tsv(allele_file_UL, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=pos+1,
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         pos_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, ref_log_prob, alt_log_prob,
+           ref_seq, alt_seq, var_id, pos_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, pos_ref, ref=ref_seq, ref_prob=ref_log_prob,
+         alt=alt_seq, alt_prob=alt_log_prob, unit_num) %>%
+  pivot_longer(c(ref_prob, alt_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, pos_ref, ref, alt, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(dominant=gsub('_prob', '', dominant),
+         allele=if_else(dominant=="ref", ref, alt)) %>%
+  ungroup() %>%
+  select(read_id, pos_ref, allele, unit_num) %>%
+  distinct() %>%
+  group_by(read_id, unit_num) %>%
+  filter(n_distinct(pos_ref)==n()) %>%
+  group_by(pos_ref) %>%
+  filter(n_distinct(allele) > 1) %>%
+  mutate(allele_num=dense_rank(allele)) %>%
+  ungroup() %>%
+  filter(pos_ref == 7980)
+```
+
+```{r}
+allele_calls_UL_10377 <- read_tsv(allele_file_UL, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=pos+1,
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         pos_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, ref_log_prob, alt_log_prob,
+           ref_seq, alt_seq, var_id, pos_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, pos_ref, ref=ref_seq, ref_prob=ref_log_prob,
+         alt=alt_seq, alt_prob=alt_log_prob, unit_num) %>%
+  pivot_longer(c(ref_prob, alt_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, pos_ref, ref, alt, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(dominant=gsub('_prob', '', dominant),
+         allele=if_else(dominant=="ref", ref, alt)) %>%
+  ungroup() %>%
+  select(read_id, pos_ref, allele, unit_num) %>%
+  distinct() %>%
+  group_by(read_id, unit_num) %>%
+  filter(n_distinct(pos_ref)==n()) %>%
+  group_by(pos_ref) %>%
+  filter(n_distinct(allele) > 1) %>%
+  mutate(allele_num=dense_rank(allele)) %>%
+  ungroup() %>%
+  filter(pos_ref == 10377)
+```
+
+```{r}
+allele_calls_co  <- allele_calls_UL_7980 %>%
+  select(-pos_ref, -allele_num) %>%
+  group_by(read_id, allele) %>%
+  summarise(num_units=n(), .groups='drop') %>%
+  group_by(read_id) %>%
+  filter(sum(num_units) > 1) %>%
+  pivot_wider(names_from=allele, values_from=num_units, values_fill=0) %>%
+  ungroup()
+```
+
+```{r}
+allele_calls_co_freqs <- 
+  inner_join(allele_calls_co %>%
+             pivot_longer(
+               -read_id, names_to='allele', values_to='num_units'), 
+         allele_calls_co, by='read_id') %>%
+  filter(num_units > 0) %>%
+  group_by(read_id) %>%
+  mutate(num_units=sum(num_units)) %>%
+  ungroup() %>%
+  mutate(G=G/num_units,
+         A=A/num_units) %>%
+  group_by(allele) %>%
+  pivot_longer(-c(read_id, allele, num_units),
+               names_to='allele_2', values_to='freq') %>%
+  group_by(allele, allele_2) %>%
+  summarise(freq=mean(freq), .groups='drop') %>%
+  ungroup()
+```
+
+```{r}
+allele_calls_co_p <- allele_calls_co_freqs %>%
+  mutate(allele=gsub('_', '', allele),
+         allele_2=gsub('_', '', allele_2)) %>%
+  ggplot() +
+  geom_tile(aes(x=allele, y=allele_2, fill=freq),
+            colour='black', size=1) +
+  geom_text(aes(x=allele, y=allele_2, label = freq)) +
+  theme_bw() +
+  labs(x='', y='') +
+  scale_fill_gradient2(name='', low='white', high='grey20',
+                       guide = guide_legend(reverse = T),
+                       limits = c(0,1)) +
+  theme(axis.text=element_text(size=14),
+        legend.key.height=unit(1.5, 'cm'), 
+        legend.text=element_text(size=14),
+        panel.border=element_blank(),
+        panel.grid=element_blank(),
+        axis.ticks=element_blank()) +
+  coord_fixed()
+```
+

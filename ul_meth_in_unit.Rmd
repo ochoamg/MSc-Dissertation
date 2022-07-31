@@ -1,0 +1,35 @@
+```{r}
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)
+}
+
+meth_calls <- read_tsv(
+  'D:/Birkbeck/Project/Ultralong/20_per_read_modified_base_calls.txt',
+  col_types=cols()) %>%
+  filter(chrm=="KY962518.1_looped_2120_20_units") %>%
+  select(-chrm) %>%
+  mutate(pos=if_else(strand=='+', pos+1, pos),
+         pos_ref=adjust_pos(pos, 2120)) %>%
+  mutate(mod_prob=exp(mod_log_prob), can_prob=exp(can_log_prob)) %>%
+  pivot_longer(c(mod_prob, can_prob),
+               values_to='prob', names_to='dominant') %>%
+  filter(prob>0.9) %>%
+  mutate(meth=if_else(dominant=="mod_prob", 1, 0))   %>%
+  ungroup()
+```
+
+```{r}
+meth_calls %>%
+    group_by(pos_ref) %>%
+    filter(n()>=5) %>%
+    mutate(pos_ref=adjust_pos((pos_ref %% 44838), 2120)) %>%
+    summarise(meth=mean(meth), .groups='drop') %>%
+    ggplot() +
+    geom_point(aes(x=pos_ref, y=meth), alpha=0.7) +
+    scale_y_continuous(limits=c(0,1)) +
+    theme_bw() +
+    labs(x='Position in rDNA reference', y='Methylation level') +
+    ggtitle("Sample HG02723, Ultralong") + 
+    theme(panel.grid=element_blank()) + 
+    ggsave("2723UL.png")
+```

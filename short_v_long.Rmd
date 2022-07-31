@@ -1,0 +1,251 @@
+```{r}
+library(tidyverse)
+library(patchwork)
+```
+
+```{r}
+file_17 = 'D:/Birkbeck/Project/Short_read/S17/S17_link.csv'
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)}
+poi <- 7980
+
+
+S17 <- read_csv(file_17, col_types=cols()) %>%
+  mutate(snp_pos = adjust_pos(snp_pos)) %>%
+  mutate(meth_pos = adjust_pos(meth_pos)) %>%
+  filter(snp_pos == poi) %>%
+  group_by(snp_pos, snp_allele, meth_pos) %>%
+  filter(n()>=10) %>%
+  group_by(snp_pos, meth_pos) %>%
+  filter(n()>=50, n_distinct(snp_allele)>1) %>%
+  group_by(snp_pos, snp_allele, meth_pos) %>%
+  group_by(meth_pos, snp_allele) %>%
+  mutate(meth_state = if_else(meth_state=='+', 1,0)) %>%
+  summarise(meth=mean(meth_state), .groups='drop')
+
+```
+
+```{r}
+p1<- S17 %>% 
+  rename(meth_ref=meth_pos) %>% 
+  rename(allele = snp_allele) %>% 
+  inner_join(data_2465, by=c('meth_ref','allele'), suffix = c('_short','_long')) %>% 
+  select(meth_ref, allele, meth_short, meth_long) %>%
+  ggplot(aes(x=as.factor(allele), y=meth_short)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Short-read HG02465')
+
+p2<- S17 %>% 
+  rename(meth_ref=meth_pos) %>% 
+  rename(allele = snp_allele) %>% 
+  inner_join(data_2465, by=c('meth_ref','allele'), suffix = c('_short','_long')) %>% 
+  select(meth_ref, allele, meth_short, meth_long) %>%
+  ggplot(aes(x=as.factor(allele), y=meth_long)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Long-read HG02465')
+
+(p1+p2)
+```
+
+#HG02589
+```{r}
+file_21 = 'D:/Birkbeck/Project/Short_read/S21/S21_link.csv'
+poi <- 7980
+
+
+S21 <- read_csv(file_21, col_types=cols()) %>%
+  mutate(snp_pos = adjust_pos(snp_pos)) %>%
+  mutate(meth_pos = adjust_pos(meth_pos)) %>%
+  filter(snp_pos == poi) %>%
+  group_by(snp_pos, snp_allele, meth_pos) %>%
+  filter(n()>=10) %>%
+  group_by(snp_pos, meth_pos) %>%
+  filter(n()>=50, n_distinct(snp_allele)>1) %>%
+  group_by(snp_pos, snp_allele, meth_pos) %>%
+  group_by(meth_pos, snp_allele) %>%
+  mutate(meth_state = if_else(meth_state=='+', 1,0)) %>%
+  summarise(meth=mean(meth_state), .groups='drop')
+
+```
+
+#HG02589 Long and Short read
+```{r}
+p1<- S21 %>% 
+  rename(meth_ref=meth_pos) %>% 
+  rename(allele = snp_allele) %>% 
+  inner_join(data_2589, by=c('meth_ref','allele'), suffix = c('_short','_long')) %>% 
+  select(meth_ref, allele, meth_short, meth_long) %>%
+  ggplot(aes(x=as.factor(allele), y=meth_short)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Short-read HG02589')
+
+p2<- S21 %>% 
+  rename(meth_ref=meth_pos) %>% 
+  rename(allele = snp_allele) %>% 
+  inner_join(data_2589, by=c('meth_ref','allele'), suffix = c('_short','_long')) %>% 
+  select(meth_ref, allele, meth_short, meth_long) %>%
+  ggplot(aes(x=as.factor(allele), y=meth_long)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Long-read HG02589')
+
+p1+p2
+```
+
+```{r}
+p1<- S21 %>% 
+  rename(meth_ref=meth_pos) %>% 
+  rename(allele = snp_allele) %>%
+  filter(allele!="C") %>%
+  inner_join(data_2589, by=c('meth_ref','allele'), suffix = c('_short','_long')) %>% 
+  select(meth_ref, allele, meth_short, meth_long) %>%
+  ggplot(aes(x=as.factor(allele), y=meth_short)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,0.2),
+                     breaks=c(0, 0.1, 0.2),
+                     labels=c('', 0.1, 0.2)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Short-read HG02589')
+
+p2<- S21 %>% 
+  rename(meth_ref=meth_pos) %>% 
+  rename(allele = snp_allele) %>%
+  filter(allele!="C") %>%
+  inner_join(data_2589, by=c('meth_ref','allele'), suffix = c('_short','_long')) %>% 
+  select(meth_ref, allele, meth_short, meth_long) %>%
+  ggplot(aes(x=as.factor(allele), y=meth_long)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,0.2),
+                     breaks=c(0, 0.1, 0.2),
+                     labels=c('', 0.1, 0.2)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Long-read HG02589')
+
+p1+p2
+```
+
+#HG02885
+```{r}
+file_35 = 'D:/Birkbeck/Project/Short_read/S35/S35_link.csv'
+poi <- 7980
+
+
+S35 <- read_csv(file_35, col_types=cols()) %>%
+  mutate(snp_pos = adjust_pos(snp_pos)) %>%
+  mutate(meth_pos = adjust_pos(meth_pos)) %>%
+  filter(snp_pos == poi) %>%
+  group_by(snp_pos, snp_allele, meth_pos) %>%
+  filter(n()>=10) %>%
+  group_by(snp_pos, meth_pos) %>%
+  filter(n()>=50, n_distinct(snp_allele)>1) %>%
+  group_by(snp_pos, snp_allele, meth_pos) %>%
+  group_by(meth_pos, snp_allele) %>%
+  mutate(meth_state = if_else(meth_state=='+', 1,0)) %>%
+  summarise(meth=mean(meth_state), .groups='drop')
+
+```
+
+#HG02885 Short and Long read
+```{r}
+p1<- S35 %>% 
+  rename(meth_ref=meth_pos) %>% 
+  rename(allele = snp_allele) %>% 
+  inner_join(data_2885, by=c('meth_ref','allele'), suffix = c('_short','_long')) %>% 
+  select(meth_ref, allele, meth_short, meth_long) %>%
+  ggplot(aes(x=as.factor(allele), y=meth_short)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Short-read HG02885')
+
+p2<- S35 %>% 
+  rename(meth_ref=meth_pos) %>% 
+  rename(allele = snp_allele) %>% 
+  inner_join(data_2885, by=c('meth_ref','allele'), suffix = c('_short','_long')) %>% 
+  select(meth_ref, allele, meth_short, meth_long) %>%
+  ggplot(aes(x=as.factor(allele), y=meth_long)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Long-read HG02885')
+
+p1+p2
+```
+
+
+```{r}
+allele_freq_2465 <- allele_calls_2465 %>%
+               filter(pos_ref==7980) %>%
+  mutate(sample="HG02465") %>%
+  select(sample, allele) %>%
+  table() %>%
+  as_tibble() %>%
+  mutate(freq=n/sum(n)) %>%
+  select(sample, allele, freq)
+
+allele_freq_2589 <- allele_calls_2589 %>%
+               filter(pos_ref==7980) %>%
+  mutate(sample="HG02589") %>%
+  select(sample, allele) %>%
+  table() %>%
+  as_tibble() %>%
+  mutate(freq=n/sum(n)) %>%
+  select(sample, allele, freq)
+
+allele_freq_2885 <- allele_calls_2885 %>%
+               filter(pos_ref==7980) %>%
+  mutate(sample="HG02885") %>%
+  select(sample, allele) %>%
+  table() %>%
+  as_tibble() %>%
+  mutate(freq=n/sum(n)) %>%
+  select(sample, allele, freq)
+
+a_f <- bind_rows(allele_freq_2465, allele_freq_2589, allele_freq_2885) %>%
+  pivot_wider(names_from = allele, values_from = c(freq)) %>%
+  mutate(freq_A = A, freq_G = G, freq_C = C) %>%
+  select(-A, -G, -C)
+```

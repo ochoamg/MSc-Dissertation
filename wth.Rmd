@@ -1,0 +1,53 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+#Tidyverse
+```{r} 
+library(tidyverse) 
+```
+
+```{r}
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)}
+```
+
+#methylation and variation across units
+```{r}
+funny_read <- read_delim(
+  'D:/Birkbeck/Project/Ultralong/relevant_reads.paf', 
+  " ",
+  col_types=cols(),
+  col_names = c("q_name","q_len","q_start",
+                "q_end","strand","t_name","t_len",
+                "t_start","t_end","n_matches","block_len")) %>%
+  arrange(q_start) %>%
+  filter(t_name == "KY962518.1_looped_2120_20_units") %>%
+  mutate(idx=row_number(q_start), unit_start_num=as.integer(( t_start - 1) / 44838) + 1, unit_end_num=as.integer(( t_end - 1) / 44838) + 1) %>%
+  arrange(q_name, unit_start_num) %>%
+  group_by(q_name) %>%
+  #filter(n()>1) %>%
+  mutate(overlap=-(t_start-lag(t_end, 1))) %>%
+  replace_na(list(overlap=0)) %>%
+  mutate(unit_cluster=1) %>%
+  mutate(unit_cluster=if_else(unit_start_num==min(unit_start_num), 1,
+                              if_else(unit_start_num - lag(unit_end_num) < 2 | unit_start_num - lag(unit_end_num) > -2,
+                                      lag(unit_cluster), lag(unigraph_7980t_cluster)+1))) %>%
+  mutate(inconsistent=if_else(q_name %in% c("fdcda3ed-4bc2-44e9-943c-a89de260674d",
+                                            "fc1efbc6-4ed7-4767-b9a0-370c74ea625e",
+                                            "f52aa139-fa59-4779-8340-6320e9e1f937",
+                                            "4e74f8f5-0c76-472a-a607-1cb35ea8281b",
+                                            "35e2c25a-7d50-411e-8064-452f7a462b30"), 1, 0)) %>%
+  select(-strand, -t_name) %>%
+  mutate(adj_t_start = adjust_pos((t_start %% 44838), 2120)) %>%
+  mutate(adj_t_end = adjust_pos((t_end %% 44838), 2120)) %>%
+#pos_ref=adjust_pos((pos %% 44838), 2120))
+  #filter(grepl("6820940", q_name))
+```
+#methylation and variation across unit plot
+```{r}
+funny_read %>%
+  ggplot() +
+  geom_segment(aes(x=q_start, y=idx, xend=q_end, yend=idx, color=as.factor(q_start)), size=15)
+```
+

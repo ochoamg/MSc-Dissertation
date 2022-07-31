@@ -1,0 +1,449 @@
+```{r} 
+library(tidyverse) 
+methylation_file_UL = 'D:/Birkbeck/Project/Ultralong/20_per_read_modified_base_calls.txt'
+allele_file_UL = 'D:/BirkBeck/Project/Ultralong/20_per_read_variant_calls.txt'
+
+chromosome_name = "KY962518.1_looped_2120_20_units"
+coding_regions_h <- tribble(
+  ~region,~start,~end,
+  '18S',3658,5526,
+  '5.8S',6597,6753,
+  '28S',7921,12971)
+```
+
+```{r}
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)
+}
+
+meth_calls_UL <- read_tsv(methylation_file_UL, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=if_else(strand=='+', pos+1, pos),
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         meth_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, can_log_prob, mod_log_prob, meth_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, meth_ref, can_prob=can_log_prob,
+         mod_prob=mod_log_prob, unit_num) %>%
+  pivot_longer(c(can_prob, mod_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, meth_ref, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(meth=if_else(dominant=="mod_prob", 1, 0)) 
+```
+
+```{r}
+allele_calls_UL <- read_tsv(allele_file_UL, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=pos+1,
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         pos_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, ref_log_prob, alt_log_prob,
+           ref_seq, alt_seq, var_id, pos_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, pos_ref, ref=ref_seq, ref_prob=ref_log_prob,
+         alt=alt_seq, alt_prob=alt_log_prob, unit_num) %>%
+  pivot_longer(c(ref_prob, alt_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, pos_ref, ref, alt, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(dominant=gsub('_prob', '', dominant),
+         allele=if_else(dominant=="ref", ref, alt)) %>%
+  ungroup() %>%
+  select(read_id, pos_ref, allele, unit_num) %>%
+  distinct() %>%
+  group_by(read_id, unit_num) %>%
+  filter(n_distinct(pos_ref)==n()) %>%
+  group_by(pos_ref) %>%
+  filter(n_distinct(allele) > 1) %>%
+  mutate(allele_num=dense_rank(allele)) %>%
+  ungroup()
+```
+
+```{r} 
+methylation_file = 'D:/Birkbeck/Project/2465_no_snp/per_read_modified_base_calls.txt'
+allele_file = 'D:/BirkBeck/Project/2465_no_snp/per_read_variant_calls.txt'
+
+chromosome_name = "KY962518.1_looped_2120"
+coding_regions_h <- tribble(
+  ~region,~start,~end,
+  '18S',3658,5526,
+  '5.8S',6597,6753,
+  '28S',7921,12971)
+```
+
+```{r}
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)
+}
+
+meth_calls_2465 <- read_tsv(methylation_file, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=if_else(strand=='+', pos+1, pos),
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         meth_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, can_log_prob, mod_log_prob, meth_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, meth_ref, can_prob=can_log_prob,
+         mod_prob=mod_log_prob, unit_num) %>%
+  pivot_longer(c(can_prob, mod_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, meth_ref, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(meth=if_else(dominant=="mod_prob", 1, 0)) 
+```
+
+```{r}
+allele_calls_2465 <- read_tsv(allele_file, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=pos+1,
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         pos_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, ref_log_prob, alt_log_prob,
+           ref_seq, alt_seq, var_id, pos_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, pos_ref, ref=ref_seq, ref_prob=ref_log_prob,
+         alt=alt_seq, alt_prob=alt_log_prob, unit_num) %>%
+  pivot_longer(c(ref_prob, alt_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, pos_ref, ref, alt, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(dominant=gsub('_prob', '', dominant),
+         allele=if_else(dominant=="ref", ref, alt)) %>%
+  ungroup() %>%
+  select(read_id, pos_ref, allele, unit_num) %>%
+  distinct() %>%
+  group_by(read_id, unit_num) %>%
+  filter(n_distinct(pos_ref)==n()) %>%
+  group_by(pos_ref) %>%
+  filter(n_distinct(allele) > 1) %>%
+  mutate(allele_num=dense_rank(allele)) %>%
+  ungroup()
+```
+
+```{r} 
+methylation_file_2589 = 'D:/Birkbeck/Project/2589/per_read_modified_base_calls.txt'
+allele_file_2589 = 'D:/BirkBeck/Project/2589/per_read_variant_calls.txt'
+
+chromosome_name = "KY962518.1_looped_2120"
+coding_regions_h <- tribble(
+  ~region,~start,~end,
+  '18S',3658,5526,
+  '5.8S',6597,6753,
+  '28S',7921,12971)
+```
+
+```{r}
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)
+}
+
+meth_calls_2589 <- read_tsv(methylation_file_2589, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=if_else(strand=='1', pos+1, pos),
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         meth_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, can_log_prob, mod_log_prob, meth_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, meth_ref, can_prob=can_log_prob,
+         mod_prob=mod_log_prob, unit_num) %>%
+  pivot_longer(c(can_prob, mod_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, meth_ref, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(meth=if_else(dominant=="mod_prob", 1, 0)) 
+```
+
+```{r}
+allele_calls_2589 <- read_tsv(allele_file_2589, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=pos+1,
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         pos_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, ref_log_prob, alt_log_prob,
+           ref_seq, alt_seq, var_id, pos_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, pos_ref, ref=ref_seq, ref_prob=ref_log_prob,
+         alt=alt_seq, alt_prob=alt_log_prob, unit_num) %>%
+  pivot_longer(c(ref_prob, alt_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, pos_ref, ref, alt, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(dominant=gsub('_prob', '', dominant),
+         allele=if_else(dominant=="ref", ref, alt)) %>%
+  ungroup() %>%
+  select(read_id, pos_ref, allele, unit_num) %>%
+  distinct() %>%
+  group_by(read_id, unit_num) %>%
+  filter(n_distinct(pos_ref)==n()) %>%
+  group_by(pos_ref) %>%
+  filter(n_distinct(allele) > 1) %>%
+  mutate(allele_num=dense_rank(allele)) %>%
+  ungroup()
+```
+
+```{r} 
+methylation_file_2885 = 'D:/Birkbeck/Project/2885/per_read_modified_base_calls.txt'
+allele_file_2885 = 'D:/BirkBeck/Project/2885/per_read_variant_calls.txt'
+
+chromosome_name = "KY962518.1_looped_2120"
+coding_regions_h <- tribble(
+  ~region,~start,~end,
+  '18S',3658,5526,
+  '5.8S',6597,6753,
+  '28S',7921,12971)
+```
+
+```{r}
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)
+}
+
+meth_calls_2885 <- read_tsv(methylation_file_2885, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=if_else(strand=='1', pos+1, pos),
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         meth_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, can_log_prob, mod_log_prob, meth_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, meth_ref, can_prob=can_log_prob,
+         mod_prob=mod_log_prob, unit_num) %>%
+  pivot_longer(c(can_prob, mod_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, meth_ref, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(meth=if_else(dominant=="mod_prob", 1, 0)) 
+```
+
+```{r}
+allele_calls_2885 <- read_tsv(allele_file_2885, col_types=cols()) %>%
+  filter(chrm==chromosome_name) %>%
+  select(-chrm) %>%
+  mutate(pos=pos+1,
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         pos_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, ref_log_prob, alt_log_prob,
+           ref_seq, alt_seq, var_id, pos_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, pos_ref, ref=ref_seq, ref_prob=ref_log_prob,
+         alt=alt_seq, alt_prob=alt_log_prob, unit_num) %>%
+  pivot_longer(c(ref_prob, alt_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, pos_ref, ref, alt, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(dominant=gsub('_prob', '', dominant),
+         allele=if_else(dominant=="ref", ref, alt)) %>%
+  ungroup() %>%
+  select(read_id, pos_ref, allele, unit_num) %>%
+  distinct() %>%
+  group_by(read_id, unit_num) %>%
+  filter(n_distinct(pos_ref)==n()) %>%
+  group_by(pos_ref) %>%
+  filter(n_distinct(allele) > 1) %>%
+  mutate(allele_num=dense_rank(allele)) %>%
+  ungroup()
+```
+
+```{r}
+meth_calls_UL %>%
+  filter(meth_ref > -1000, meth_ref <= 13332) %>%
+  inner_join(allele_calls_UL %>%
+               filter(pos_ref==7980) %>%
+               select(read_id, allele), by='read_id') %>%
+  group_by(meth_ref, allele) %>%
+  summarise(meth=mean(meth), .groups='drop') %>%
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Ultralong Sample')
+```
+
+
+```{r}
+data_2465 <- meth_calls_2465 %>%
+  filter(meth_ref > -1000, meth_ref <= 13332) %>%
+  inner_join(allele_calls_2465 %>%
+               filter(pos_ref==7980) %>%
+               select(read_id, allele), by='read_id') %>%
+  group_by(meth_ref, allele) %>%
+  summarise(meth=mean(meth), .groups='drop')
+plot_2465 <- data_2465 %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Sample HG02465')
+plot_2465
+```
+
+```{r}
+data_2589 <- meth_calls_2589 %>%
+  filter(meth_ref > -1000, meth_ref <= 13332) %>%
+  inner_join(allele_calls_2589 %>%
+               filter(pos_ref==7980) %>%
+               select(read_id, allele), by='read_id') %>%
+  group_by(meth_ref, allele) %>%
+  summarise(meth=mean(meth), .groups='drop')
+plot_2589 <- data_2589 %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.2),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Sample HG02589')
+plot_2589
+```
+
+```{r}
+meth_calls_2589 %>%
+  filter(meth_ref > -1000, meth_ref <= 13332) %>%
+  inner_join(allele_calls_2589 %>%
+               filter(pos_ref==7980) %>%
+               select(read_id, allele), by='read_id') %>%
+  group_by(meth_ref, allele) %>%
+  summarise(meth=mean(meth), .groups='drop') %>%
+  filter(allele!="C") %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,0.3),
+                     breaks=c(0, 0.3),
+                     labels=c('', 0.3)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Sample HG02589')
+```
+
+```{r}
+data_2885 <- meth_calls_2885 %>%
+  filter(meth_ref > -1000, meth_ref <= 13332) %>%
+  inner_join(allele_calls_2885 %>%
+               filter(pos_ref==7980) %>%
+               select(read_id, allele), by='read_id') %>%
+  group_by(meth_ref, allele) %>%
+  summarise(meth=mean(meth), .groups='drop')
+plot_2885 <- data_2885 %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Sample HG02885')
+plot_2885
+```
+
+
+```{r}
+meth_calls_UL %>%
+  filter(meth_ref > -1000, meth_ref <= 13332) %>%
+  inner_join(allele_calls_UL %>%
+               filter(pos_ref==10377) %>%
+               select(read_id, allele), by='read_id') %>%
+  group_by(meth_ref, allele) %>%
+  summarise(meth=mean(meth), .groups='drop') %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Ultralong Sample @ 10377')
+```
+
+
+```{r}
+meth_calls_2465 %>%
+  filter(meth_ref > -1000, meth_ref <= 13332) %>%
+  inner_join(allele_calls_2465 %>%
+               filter(pos_ref==10377) %>%
+               select(read_id, allele), by='read_id') %>%
+  group_by(meth_ref, allele) %>%
+  summarise(meth=mean(meth), .groups='drop') %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Sample HG02465 @ 10377')
+```
+
+```{r}
+meth_calls_2589 %>%
+  filter(meth_ref > -1000, meth_ref <= 13332) %>%
+  inner_join(allele_calls_2589 %>%
+               filter(pos_ref==10377) %>%
+               select(read_id, allele), by='read_id') %>%
+  group_by(meth_ref, allele) %>%
+  summarise(meth=mean(meth), .groups='drop') %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Sample HG02589 @ 10377')
+```
+
+```{r}
+meth_calls_2885 %>%
+  filter(meth_ref > -1000, meth_ref <= 13332) %>%
+  inner_join(allele_calls_2885 %>%
+               filter(pos_ref==10377) %>%
+               select(read_id, allele), by='read_id') %>%
+  group_by(meth_ref, allele) %>%
+  summarise(meth=mean(meth), .groups='drop') %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank()) +
+  ggtitle('Sample HG02885 @ 10377')
+```

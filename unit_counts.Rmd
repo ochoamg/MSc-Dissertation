@@ -1,0 +1,425 @@
+```{r} 
+library(tidyverse) 
+```
+
+``` {r}
+mef_variants_supp <- read_tsv('D:/BirkBeck/Project/Ultralong/20_per_read_variant_calls.txt',
+                     col_types=cols()) %>%
+  filter(chrm=="KY962518.1_looped_2120_20_units") %>%
+  select(-chrm) %>%
+  mutate(pos=pos+1,
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         pos_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, ref_log_prob, alt_log_prob,
+           ref_seq, alt_seq, var_id, pos_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, pos_ref, ref=ref_seq, ref_prob=ref_log_prob,
+         alt=alt_seq, alt_prob=alt_log_prob, unit_num) %>%
+  pivot_longer(c(ref_prob, alt_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, pos_ref, ref, alt, unit_num) %>%
+  filter(n()==1) %>%
+  mutate(dominant=gsub('_prob', '', dominant),
+         allele=if_else(dominant=="ref", ref, alt)) %>%
+  ungroup() %>%
+  select(read_id, pos_ref, allele, unit_num) %>%
+  distinct() %>%
+  group_by(read_id, unit_num) %>%
+  filter(n_distinct(pos_ref)==n()) %>%
+  group_by(pos_ref) %>%
+  filter(n_distinct(allele) > 1) %>%
+  mutate(allele_num=dense_rank(allele)) %>%
+  ungroup()
+```
+
+``` {r}
+mef_variants_supp %>% 
+  group_by(read_id, pos_ref) %>%
+  filter(n_distinct(unit_num) > 1) %>%
+  group_by(read_id, pos_ref, allele_num) %>% 
+  summarise(num_allele = n()) %>%
+  group_by(read_id, pos_ref) %>%
+  mutate(freq_allele = num_allele / sum(num_allele)) %>%
+  summarise(min_freq_allele = min(freq_allele), max_freq_allele = max(freq_allele)) %>%
+  arrange(min_freq_allele)
+
+```
+```{r}
+
+mef_variants_supp_counts <- mef_variants_supp %>% 
+  group_by(read_id) %>% 
+  mutate(num_units=n_distinct(unit_num)) %>%
+  filter(num_units > 1)
+
+```
+
+```{r}
+
+mef_variants_supp_multi <- mef_variants_supp %>% 
+  group_by(read_id, unit_num) %>% 
+  filter(! all(pos_ref > 0), ! all(pos_ref < 7980)) %>% 
+  group_by(read_id) %>% 
+  mutate(num_units=n_distinct(unit_num)) %>% 
+  filter(num_units > 1)
+
+```
+
+``` {r}
+mef_variants_supp_multi %>% 
+  group_by(read_id, pos_ref) %>%
+  filter(n_distinct(unit_num) > 1) %>%
+  group_by(read_id, pos_ref, allele_num) %>% 
+  summarise(num_allele = n()) %>%
+  group_by(read_id, pos_ref) %>%
+  mutate(freq_allele = num_allele / sum(num_allele)) %>%
+  summarise(min_freq_allele = min(freq_allele), max_freq_allele = max(freq_allele)) %>%
+  arrange(min_freq_allele)
+
+```
+
+#average methlyation visualisation
+``` {r}
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)
+}
+
+meth_calls <- read_tsv(
+  'D:/Birkbeck/Project/Ultralong/20_per_read_modified_base_calls.txt', col_types=cols()) %>%
+  filter(chrm=="KY962518.1_looped_2120_20_units") %>%
+  select(-chrm) %>%
+  mutate(pos=if_else(strand=='+', pos+1, pos),
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         meth_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, can_log_prob, mod_log_prob, meth_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, meth_ref, can_prob=can_log_prob,
+         mod_prob=mod_log_prob, unit_num) %>%
+  pivot_longer(c(can_prob, mod_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, meth_ref, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(meth=if_else(dominant=="mod_prob", 1, 0)) 
+
+  multi_meth_calls <- meth_calls %>%
+  group_by(read_id, unit_num) %>%
+  filter(! all(meth_ref > 0), ! all(meth_ref < 7980)) %>%
+  group_by(read_id) %>%
+  filter(n_distinct(unit_num) > 1) %>%
+  select(read_id, meth_ref, unit_num, meth)
+
+meth_graph <- multi_meth_calls %>% 
+  filter(meth_ref > -1000, meth_ref <= 13332) %>% 
+  group_by(read_id, unit_num) %>% 
+  summarise(mean_meth = mean(meth)) %>%
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, fill=mean_meth), shape=21, size=3) + 
+  scale_fill_gradient2("Mean\nmethylation\n10 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5))
+```
+
+#allele visualisation
+``` {r}
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)
+}
+
+allele_calls <- read_tsv('D:/BirkBeck/Project/Ultralong/20_per_read_variant_calls.txt',
+                     col_types=cols()) %>%
+  filter(chrm=="KY962518.1_looped_2120_20_units") %>%
+  select(-chrm) %>%
+  mutate(pos=pos+1,
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         pos_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, ref_log_prob, alt_log_prob,
+           ref_seq, alt_seq, var_id, pos_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, pos_ref, ref=ref_seq, ref_prob=ref_log_prob,
+         alt=alt_seq, alt_prob=alt_log_prob, unit_num) %>%
+  pivot_longer(c(ref_prob, alt_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, pos_ref, ref, alt, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(dominant=gsub('_prob', '', dominant),
+         allele=if_else(dominant=="ref", ref, alt)) %>%
+  ungroup() %>%
+  select(read_id, pos_ref, allele, unit_num) %>%
+  distinct() %>%
+  group_by(read_id, unit_num) %>%
+  filter(n_distinct(pos_ref)==n()) %>%
+  group_by(pos_ref) %>%
+  filter(n_distinct(allele) > 1) %>%
+  mutate(allele_num=dense_rank(allele)) %>%
+  ungroup()
+
+  multi_allele_calls <- allele_calls %>%
+  group_by(read_id, unit_num) %>%
+  filter(! all(pos_ref > 0), ! all(pos_ref < 7980)) %>%
+  group_by(read_id) %>%
+  filter(n_distinct(unit_num) > 1) %>%
+  select(read_id, pos_ref, unit_num, allele)
+
+allele_graph <- multi_allele_calls %>% 
+  filter(pos_ref == 7980) %>% 
+  group_by(read_id, unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele), size=3) + 
+  scale_shape_manual(values=c('A'=65, 'C'=67, 'G'=71, 'T'=84)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5))
+```
+#mef_variants_supp %>% group_by(pos_ref, allele) %>% summarise(num_allele=n()) %>% group_by(pos_ref) %>% summarise(maf=min(num_allele)/sum(num_allele)) %>% filter(maf >0.4 & maf <0.6)
+#to find positions with allele freuqency around 50%
+```{r}
+joint_calls <- meth_calls %>%
+  group_by(read_id, unit_num) %>%
+  summarise(mean_meth=mean(meth)) %>%
+  inner_join(allele_calls, by=c('read_id','unit_num')) %>%
+  group_by(read_id, unit_num) %>%
+  filter(! all(pos_ref > 0), ! all(pos_ref < 7980)) %>%
+  group_by(read_id) %>%
+  filter(n_distinct(unit_num) > 1)
+
+graph_7980 <- joint_calls %>% 
+  filter(pos_ref == 7980) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number',y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) +
+  ggtitle("Position 7980")
+
+graph_10377 <- joint_calls %>% 
+  filter(pos_ref == 10377) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) +
+  ggtitle("Position 10377")
+
+graph_10086 <- joint_calls %>% 
+  filter(pos_ref == 10086) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) +
+  ggtitle("Position 10086")
+
+graph_12807 <- joint_calls %>% 
+  filter(pos_ref == 12807) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) +
+  ggtitle("Position 12807")
+
+graph_10104 <- joint_calls %>% 
+  filter(pos_ref == 10104) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) +
+  ggtitle("Position 10104")
+
+graph_11253 <- joint_calls %>% 
+  filter(pos_ref == 11253) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) + 
+  ggtitle("Position 11253")
+
+graph_2298 <- joint_calls %>% 
+  filter(pos_ref == 2298) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) + 
+  ggtitle("Position 2298")
+
+graph_5734 <- joint_calls %>% 
+  filter(pos_ref == 5734) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) + 
+  ggtitle("Position 5734")
+
+graph_8782 <- joint_calls %>% 
+  filter(pos_ref == 8782) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) + 
+  ggtitle("Position 8782")
+
+graph_12986 <- joint_calls %>% 
+  filter(pos_ref == 12986) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) + 
+  ggtitle("Position 12986")
+
+graph_8069 <- joint_calls %>% 
+  filter(pos_ref == 8069) %>% 
+  group_by(read_id , unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele, fill=mean_meth), size=4) + 
+  scale_shape_manual(values=c('A'=21, 'C'=23, 'G'=22, 'T'=24)) +
+  scale_fill_gradient2("Mean\nmethylation\n20 Units", low="red", high="blue", mid="white", midpoint=0.5, limits=c(0,1)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5)) + 
+  ggtitle("Position 8069")
+```
+
+
+#check how many real units in read_id fdcda3ed-4bc2-44e9-943c-a89de260674d
+``` {r}
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)
+}
+
+allele_calls <- read_tsv('D:/BirkBeck/Project/Ultralong/20_per_read_variant_calls.txt',
+                     col_types=cols()) %>%
+  filter(chrm=="KY962518.1_looped_2120_20_units") %>%
+  filter(read_id=="fc1efbc6-4ed7-4767-b9a0-370c74ea625e") %>%
+  select(-chrm) %>%
+  mutate(pos=pos+1,
+         unit_num=as.integer( ( pos - 1) / 44838) + 1,
+         pos_ref=adjust_pos((pos %% 44838), 2120)) %>%
+  group_by(read_id, strand, ref_log_prob, alt_log_prob,
+           ref_seq, alt_seq, var_id, pos_ref) %>%
+  summarise(unit_num=min(unit_num), .groups='drop') %>%
+  select(read_id, pos_ref, ref=ref_seq, ref_prob=ref_log_prob,
+         alt=alt_seq, alt_prob=alt_log_prob, unit_num) %>%
+  pivot_longer(c(ref_prob, alt_prob), values_to='prob', names_to='dominant') %>%
+  filter(prob>log(0.9)) %>%
+  group_by(read_id, pos_ref, ref, alt, unit_num) %>%
+  distinct() %>%
+  filter(n()==1) %>%
+  mutate(dominant=gsub('_prob', '', dominant),
+         allele=if_else(dominant=="ref", ref, alt)) %>%
+  ungroup() %>%
+  select(read_id, pos_ref, allele, unit_num) %>%
+  distinct() %>%
+  group_by(read_id, unit_num) %>%
+  filter(n_distinct(pos_ref)==n()) %>%
+  group_by(pos_ref) %>%
+  filter(n_distinct(allele) > 1) %>%
+  mutate(allele_num=dense_rank(allele)) %>%
+  ungroup()
+
+  multi_allele_calls <- allele_calls %>%
+  group_by(read_id, unit_num) %>%
+  filter(! all(pos_ref > 0), ! all(pos_ref < 7980)) %>%
+  group_by(read_id) %>%
+  filter(n_distinct(unit_num) > 1) %>%
+  select(read_id, pos_ref, unit_num, allele)
+
+allele_graph <- multi_allele_calls %>% 
+  filter(pos_ref == 7980) %>% 
+  group_by(read_id, unit_num) %>% 
+  ggplot() + 
+  geom_point(aes(x=as.factor(unit_num), y=read_id, shape=allele), size=3) + 
+  scale_shape_manual(values=c('A'=65, 'C'=67, 'G'=71, 'T'=84)) +
+  theme_bw() +
+  labs(x='Unit Number', y='') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5))
+```
+
+
+
+```{r}
+coding_regions_h <- tribble(
+  ~region,~start,~end,
+  '18S',3658,5526,
+  '5.8S',6597,6753,
+  '28S',7921,12971)
+# ADJUST POSITIONS - done when creating meth_calls and allele_calls
+# group_by(pos, allele) %>%
+# summarise(num_reads=n()) %>%
+# mutate(read_freq=num_reads/sum(num_reads))
+
+coding_reads <- meth_calls %>%
+  group_by(read_id, unit_num) %>%
+  summarise(mean_meth=mean(meth)) %>%
+  inner_join(allele_calls, by=c('read_id','unit_num')) %>%
+  group_by(read_id, unit_num) %>%
+  filter(! all(pos_ref > 0), ! all(pos_ref < 7980)) %>%
+  group_by(read_id) %>%
+  filter(n_distinct(unit_num) > 1) %>%
+  filter((pos_ref >= coding_regions_h$start[1] & pos_ref <= coding_regions_h$end[1]) | 
+           (pos_ref >= coding_regions_h$start[2] & pos_ref <= coding_regions_h$end[2]) |
+           (pos_ref >= coding_regions_h$start[3] & pos_ref <= coding_regions_h$end[3])) %>%
+  group_by(pos_ref, allele) %>%
+  summarise(num_reads=n()) %>%
+  mutate(read_freq=num_reads/sum(num_reads)) %>%
+  ggplot() + 
+  geom_col(aes(x=as.factor(pos_ref), y=read_freq, fill=allele)) + 
+  #facet_grid(rows = vars(read_freq)) + 
+  theme_bw() +
+  labs(x='Position', y='Read Frequency') +
+  theme(panel.border=element_rect(size=1.1),
+        axis.text.y=element_text(size=7.5))
+```
+
+

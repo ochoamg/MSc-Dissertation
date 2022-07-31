@@ -1,0 +1,325 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r} 
+library(tidyverse) 
+```
+
+```{r}
+variants_all <- read_csv('variants_20_units_UL.csv', col_types = cols()) %>%
+  select(read_id, pos, allele) %>%
+  distinct() %>%
+  group_by(pos) %>%
+  filter(n_distinct(allele) > 1) %>%
+  mutate(allele_num=dense_rank(allele)) %>%
+  ungroup()
+  
+```
+
+```{r}
+linkage_all <- variants_all %>%
+    inner_join(variants_all,
+             by=c('read_id'),
+             suffix=c('_1', '_2')) %>%
+  filter(pos_1 < pos_2)%>%
+  group_by(pos_1, allele_num_1,
+           pos_2, allele_num_2) %>%
+  summarise(num_reads=n_distinct(read_id), .groups='drop') %>%
+  mutate(haplotype=paste(allele_num_1, allele_num_2, sep='_')) %>%
+  pivot_wider(-c(allele_num_1, allele_num_2),
+              names_from='haplotype', values_from='num_reads', values_fill=0) %>%
+  add_column(!!! cols[!names(cols) %in% names(.)]) %>%
+  rowwise() %>%
+  mutate(
+    broom::tidy(
+      fisher.test(
+        matrix(c(`1_1`, `1_2`, `1_3`, `2_1`, `2_2`, `2_3`, `3_1`, `3_2`, `3_3`),
+           byrow=T, nrow=3)))) %>%
+  ungroup()
+```
+
+```{r}
+cols <- c("1_1"=0, "1_2"=0, "1_3"=0,
+          "2_1"=0, "2_2"=0, "2_3"=0,
+          "3_1"=0, "3_2"=0, "3_3"=0)
+linkage_all <- variants_all %>%
+    inner_join(variants_all,
+             by=c('read_id'),
+             suffix=c('_1', '_2')) %>%
+  filter(pos_1 < pos_2) %>%
+  group_by(pos_1, allele_num_1,
+           pos_2, allele_num_2) %>%
+  summarise(num_reads=n_distinct(read_id), .groups='drop') %>%
+  mutate(haplotype=paste(allele_num_1, allele_num_2, sep='_')) %>%
+  pivot_wider(-c(allele_num_1, allele_num_2),
+              names_from='haplotype',
+              values_from='num_reads',
+              values_fill=0) %>%
+  add_column(!!!cols[!names(cols) %in% names(.)]) %>%
+  rowwise() %>%
+  mutate(
+    broom::tidy(
+      fisher.test(
+        matrix(c(`1_1`, `1_2`, `1_3`,
+                 `2_1`, `2_2`, `2_3`,
+                 `3_1`, `3_2`, `3_3`),
+           byrow=T, nrow=3)))) %>%
+  ungroup()
+```
+
+```{r}
+cols <- c("1_1"=0, "1_2"=0, "1_3"=0,
+          "2_1"=0, "2_2"=0, "2_3"=0,
+          "3_1"=0, "3_2"=0, "3_3"=0)
+linkage_7980 <- variants_all %>%
+    inner_join(variants_all %>% filter(pos == 7980),
+             by=c('read_id'),
+             suffix=c('_1', '_2')) %>%
+  filter(pos_1 != pos_2) %>%
+  group_by(pos_1, allele_num_1,
+           pos_2, allele_num_2) %>%
+  summarise(num_reads=n_distinct(read_id), .groups='drop') %>%
+  mutate(haplotype=paste(allele_num_1, allele_num_2, sep='_')) %>%
+  pivot_wider(-c(allele_num_1, allele_num_2),
+              names_from='haplotype',
+              values_from='num_reads',
+              values_fill=0) %>%
+  add_column(!!!cols[!names(cols) %in% names(.)]) %>%
+  rowwise() %>%
+  mutate(
+    broom::tidy(
+      fisher.test(
+        matrix(c(`1_1`, `1_2`, `1_3`,
+                 `2_1`, `2_2`, `2_3`,
+                 `3_1`, `3_2`, `3_3`),
+           byrow=T, nrow=3)))) %>%
+  ungroup()
+```
+
+```{r}
+linkage_good <- linkage_all %>% filter(p.value < 0.0005)
+
+linkage_good %>%
+  mutate(p_adj=-log10(p.adjust(p.value, method='fdr')),
+         sig=(p_adj > 2)) %>%
+  ggplot() +
+  geom_point(aes(x=pos_2, y=pos_1, colour=p_adj, alpha=sig,
+                 size=p_adj),
+             stroke=0.1) +
+  theme_bw() +
+  labs(x='', y='') +
+  theme(aspect.ratio=1, 
+        legend.position='none',
+        panel.grid=element_blank(),
+        panel.border=element_rect(size=1.1),
+        axis.text=element_text(size=12))
+```
+
+Pos = -96, 5597, 8069
+Pos = -96, 648, 1944, 5819, 8069
+Pos = -612, 1620, 2264
+Pos = -612, 1620, 2264, 7779
+Pos = -654, 5819, 11492
+Pos = -654, 648, 1756
+Pos = 815, 6551, 7980
+Pos = -1774, 7980, 11492
+Pos = 6551, 7980, 11492
+Pos = -85, 648, 1944
+Pos = -654, 5819
+Pos = -1504, -96, 648
+Pos = -1818, 648, 13097
+
+```{r}
+positions <- c(7980, 10948)
+title <- paste("Positions", paste(positions, collapse = "_"), sep="_")
+filename <- paste0(title, paste(".png"))
+variants_test <- variants_all %>% 
+  group_by(read_id) %>% 
+  filter(pos %in% positions) %>% 
+  filter(n() == 2) %>% 
+  pivot_wider(-allele_num, names_from = pos, values_from = allele) %>%
+  unite(haplotype, -read_id, sep='') 
+ggplot(variants_test) + geom_bar(aes(x=haplotype))
+
+```
+
+# To print haplotypes
+```{r}
+to_remove = c('CAG')
+variants_join <- variants_all %>% 
+  inner_join(variants_test, by='read_id') %>% 
+  filter(!haplotype %in% to_remove) %>%
+  group_by(pos, haplotype, allele) %>%
+  summarise(num_reads=n()) %>%
+  group_by(pos, haplotype) %>%
+  mutate(read_freq=num_reads/sum(num_reads))
+
+variants_join %>% ggplot() + 
+  geom_col(aes(x=as.factor(pos), y=read_freq, fill=allele)) + 
+  facet_grid(rows = vars(haplotype)) + 
+  theme_bw() +
+  labs(x='Position', y='Read Frequency') +
+  theme(panel.grid=element_blank(),
+        panel.border=element_rect(size=1.1),
+        axis.text.x=element_text(size=8, angle=45, hjust=1 ))+
+  ggtitle(title) + 
+  ggsave(paste0("tentative_haplotype/",filename), width = 16, height = 6)
+
+```
+
+#To check rates
+```{r}
+to_remove = c('')
+variants_join <- variants_all %>% 
+  inner_join(variants_test, by='read_id') %>% 
+  filter(!haplotype %in% to_remove) %>%
+  group_by(pos, haplotype, allele) %>%
+  summarise(num_reads=n()) %>%
+  group_by(pos, haplotype) %>%
+  mutate(read_freq=num_reads/sum(num_reads))
+variants_join %>% arrange(-read_freq) %>% filter(read_freq == 1) %>% arrange(haplotype, pos) %>% View()
+
+```
+
+and what I mean is try to have some numbers associated with each combination, such as, I don't know: number of haplotypes, mean allele frequency (perhaps on a per-haplotype basis), number of positions with less than X minimum allele frequency (same), etc 
+
+```{r}
+position_list <- list(c(-1774, 1251, 7980), c(815, 6551, 7980))
+
+generator <- function(max_pos){linkage_all %>% filter(pos_2 == max_pos) %>% filter(p.value < 0.0005) %>% pull(pos_1)}
+num_steps <- function(num_steps, max_pos){for (x in seq(1,num_steps, 1)){gen_out <- generator(max_pos)
+  lapp_out <- lapply(gen_out, generator)}}
+  
+  
+  }
+
+counter <- function(the_pos){variants_all %>% 
+  group_by(read_id) %>% 
+  filter(pos %in% the_pos) %>% 
+  filter(n() == length(the_pos)) %>% 
+  pivot_wider(-allele_num, names_from = pos, values_from = allele) %>%
+  unite(haplotype, -read_id, sep='') %>%
+    group_by(haplotype) %>%
+    count(haplotype)}
+
+```
+
+
+```{r}
+generator <- function(max_pos){linkage_all %>% 
+    filter(pos_2 == max_pos) %>% 
+    filter(p.value < 0.0005) %>% 
+    select(pos_1, pos_2) %>%
+    inner_join(linkage_all %>% 
+                 filter(p.value < 0.0005) %>% 
+                 select(pos_1, pos_2) %>%
+                 rename(pos_0 = pos_1), by = c("pos_1" = "pos_2")) %>%
+    relocate(pos_0) %>%
+    arrange(pos_0, pos_1)}
+
+counter <- function(the_pos){variants_all %>% 
+  group_by(read_id) %>% 
+  filter(pos %in% the_pos) %>% 
+  filter(n() == length(the_pos)) %>% 
+  pivot_wider(-allele_num, names_from = pos, values_from = allele) %>%
+  unite(haplotype, -read_id, sep='') %>%
+    group_by(haplotype) %>%
+    count(haplotype) %>%
+    arrange(-n)}
+
+allinone <- function(max_pos){
+    gen_out <- generator(max_pos)
+    counter_out <- bind_rows(
+        apply(X=gen_out, FUN=counter, MARGIN=1),
+        .id='id')
+    inner_join(
+        gen_out %>% rownames_to_column('id'),
+        counter_out, by='id')}
+```
+
+#methylation status (Fran)
+```{r}
+adjust_pos <- function(pos, loop_size=2120) {
+  if_else(pos<=loop_size, pos-loop_size-1, pos-loop_size)
+}
+
+meth_calls <- read_tsv(
+  'D:/Birkbeck/Project/subset_per_read_modified_base_calls.txt',
+  col_types=cols()) %>%
+  filter(chrm=="KY962518.1_looped_2120") %>%
+  select(-chrm) %>%
+  mutate(pos=if_else(strand=='+', pos+1, pos),
+         pos_ref=adjust_pos(pos, 2120)) %>%
+  mutate(mod_prob=exp(mod_log_prob), can_prob=exp(can_log_prob)) %>%
+  pivot_longer(c(mod_prob, can_prob),
+               values_to='prob', names_to='dominant') %>%
+  filter(prob>0.9) %>%
+  mutate(meth=if_else(dominant=="mod_prob", 1, 0))   %>%
+  ungroup()
+```
+#per-position methylation
+```{r}
+to_remove = c('CGCAG','CGCGA','CGGAA','CTCAA','TTGAA','TTGGA')
+variants_test %>% 
+  filter(!haplotype %in% to_remove) %>%
+  inner_join(meth_calls, by="read_id") %>%
+  filter(pos_ref > -1000, pos_ref <= 13332) %>%
+  group_by(read_id, haplotype) %>%
+  filter(n_distinct(pos_ref)>10) %>%
+  summarise(meth=mean(meth), .groups='drop') %>%
+  ggplot(aes(x=haplotype, y=meth)) +
+  geom_boxplot() + 
+  geom_jitter(width=0.3) +
+  ggsave(paste0("tentative_haplotype/","meth_",filename), width = 16, height = 6)
+
+```
+#mean methylation
+```{r}
+to_remove = c('CGCAG','CGCGA','CGGAA','CTCAA','TTGAA','TTGGA')
+variants_test %>% 
+  filter(!haplotype %in% to_remove) %>%
+  inner_join(meth_calls, by="read_id") %>%
+  filter(pos_ref > -1000, pos_ref <= 13332) %>%
+  group_by(pos_ref, haplotype) %>%
+    filter(n()>10) %>%
+  summarise(meth=mean(meth), .groups='drop') %>%
+  ggplot(aes(x=haplotype, y=meth)) +
+  geom_boxplot(outlier.alpha = 0) + 
+  geom_jitter(width=0.3)# +
+  ggsave(paste0("tentative_haplotype/","avg_meth_",filename), width = 16, height = 6)
+
+```
+
+#AVG sample methylation
+```{r}
+meth_calls %>%
+    group_by(meth_ref) %>%
+    filter(n()>=5) %>%
+    summarise(meth=mean(meth), .groups='drop') %>%
+    ggplot() +
+    geom_point(aes(x=meth_ref, y=meth), alpha=0.7) +
+    scale_y_continuous(limits=c(0,1)) +
+    theme_bw() +
+    labs(x='Position in rDNA reference', y='Methylation level') +
+    theme(panel.grid=element_blank())
+```
+
+```{r}
+meth_calls %>%
+  filter(pos_ref > -1000, pos_ref <= 13332) %>%
+  inner_join(variants_all %>%
+               filter(pos==7980) %>%
+               select(read_id, allele), by='read_id') %>%
+  group_by(pos_ref, allele) %>%
+  summarise(meth=mean(meth), .groups='drop') %>%
+  ggplot(aes(x=as.factor(allele), y=meth)) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(alpha=0.5, width=0.1) +
+  theme_bw() +
+  scale_y_continuous(limits=c(0,1.02),
+                     breaks=c(0, 0.5, 1),
+                     labels=c('', 0.5, 1)) +
+  labs(x='', y='Methylation Level') +
+  theme(panel.grid=element_blank())
+```
