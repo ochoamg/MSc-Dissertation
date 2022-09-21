@@ -1,0 +1,79 @@
+#!/bin/bash
+#$ -cwd
+#$ -j y
+#$ -l h_rt=240:0:0
+#$ -l h_vmem=4G
+#$ -l gpu=2
+#$ -l gpu_type=volta
+#$ -pe smp 16
+#$ -t 2
+#$ -o logs/
+
+batches=($(ls -d ../../data/guppy/*/))
+ix=$(( $SGE_TASK_ID-1 ))
+path=${batches[$ix]}
+batch=$(basename $path)
+
+echo "${batch}: Started"
+
+path="../../data/guppy/${batch}"
+ofd="../../data/megalodon_many/${batch}"
+
+ont_fd="/data/Blizard-Rakyan/Rakyan_Lab_Files/Seq_Tools/ONT/Guppy/4.2.2/"
+guppy_fd="${ont_fd}ont-guppy/"
+
+config="res_dna_r941_min_modbases_5mC_CpG_v001.cfg"
+json="res_dna_r941_min_modbases_5mC_CpG_v001.jsn"
+
+rfd="/data/Blizard-Rakyan/Rakyan_Lab_Files/Genomes/Human/WG/Hg38/rDNA/WG_rDNA/"
+rfn="${rfd}hg38.rDNA.fa"
+
+
+tfd=".tmp/${batch}/"
+
+mkdir -p $ofd
+mkdir -p $tfd
+
+
+sample_num=$( echo ${batch} | cut -d"_" -f1 )
+vfn="../../../WGS/data/lofreq/HG0${sample_num}/HG0${sample_num}.many.vcf"
+
+#export CUDA_VISIBLE_DEVICES=${SGE_HGR_gpu// /,}
+module load -s cuda/9.0.176
+module load -s gatk/4.1.6.0
+
+tfn="${tfd}tmp.vcf"
+
+gatk UpdateVCFSequenceDictionary --output ${tfn} --variant $vfn -R $rfn
+
+module load -s python/3.8.5
+module load -s samtools/1.10
+
+bfn=$(ls ../../data/bam_rdna/${batch}/*.bam)
+samtools view $bfn | awk '{print $1}' | sort | uniq > ${tfd}reads.txt
+
+source ~/envs/megalodon/bin/activate
+
+#echo $CUDA_VISIBLE_DEVICES
+
+megalodon \
+    --guppy-server-path ${guppy_fd}/bin/guppy_basecall_server \
+    --guppy-config ${config} \
+    --guppy-params "-m ${json} --num_callers ${NSLOTS} --chunks_per_runner 96" \
+    --guppy-timeout 3600.0 \
+    --processes $NSLOTS \
+    --devices 0 1 \
+    --overwrite \
+    --output-directory $ofd \
+    --outputs mod_basecalls per_read_mods mods per_read_variants variants \
+    --mod-motif m CG 0 \
+    --write-mods-text \
+    --variant-filename ${tfn} \
+    --write-variants-text \
+    --reference $rfn \
+    --read-ids-filename ${tfd}reads.txt \
+    $path
+
+rm -r ${tfd}
+
+echo "${batch}: Finished"

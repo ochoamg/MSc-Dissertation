@@ -1,0 +1,59 @@
+#!/bin/bash
+#$ -cwd
+#$ -j y
+#$ -l h_rt=1:0:0
+#$ -l h_vmem=4G
+#$ -l gpu=1
+#$ -l gpu_type=volta
+#$ -pe smp 8
+#$ -N megalodon_2465_sec_mult_10
+#$ -o logs/
+
+echo "Started"
+
+path="/data/Blizard-Rakyan/Mateus/data/raw/2465_data/"
+ofd="/data/Blizard-Rakyan/Mateus/data/megalodon/2465_multi/10/"
+
+ont_fd="/data/Blizard-Rakyan/Rakyan_Lab_Files/Seq_Tools/ONT/Guppy/4.2.2/"
+guppy_fd="${ont_fd}ont-guppy/"
+
+config="res_dna_r941_min_modbases_5mC_CpG_v001.cfg"
+json="res_dna_r941_min_modbases_5mC_CpG_v001.jsn"
+
+rfn="/data/Blizard-Rakyan/Rakyan_Lab_Files/Genomes/Human/rDNA/KY962518/Looped_Expanded/wg_KY962518_looped_2120_10_units.fasta"
+
+vfn="/data/Blizard-Rakyan/Mateus/data/VCF/10_Units_correct/multi.vcf"
+
+module load cuda/9.0.176
+module load gatk/4.1.6.0
+
+gatk UpdateVCFSequenceDictionary --output tmp.vcf --variant $vfn -R $rfn
+
+module load python/3.8.5
+module load samtools/1.10
+
+source ./envs/megalodon/bin/activate
+
+mkdir -p $ofd
+
+megalodon \
+    --guppy-server-path ${guppy_fd}/bin/guppy_basecall_server \
+    --guppy-config ${config} \
+    --guppy-params "-m ${json} --num_callers ${NSLOTS} --chunks_per_runner 96" \
+    --reads-per-guppy-batch 10 \
+    --guppy-timeout 600.0 \
+    --processes $NSLOTS \
+    --devices 0 \
+    --overwrite \
+    --output-directory $ofd \
+    --outputs mod_basecalls per_read_mods mods per_read_variants variants \
+    --mod-motif m CG 0 \
+    --write-mods-text \
+    --variant-filename tmp.vcf \
+    --write-variants-text \
+    --reference $rfn \
+    --allow-supplementary-alignments \
+    --read-ids-filename /data/Blizard-Rakyan/Mateus/data/bam/2465_data/rdna/headers.txt \
+    $path
+
+echo "Finished"
